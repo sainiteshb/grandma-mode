@@ -53,80 +53,85 @@ def decode_image(base64_string):
     image_bytes = base64.b64decode(base64_string)
     return Image.open(io.BytesIO(image_bytes))
 
+# In backend/main.py
+
 @app.post("/simplify")
 async def simplify_page(request: ScreenshotRequest):
     print("📸 Receiving Screenshot Request...")
 
-    # --- HACKATHON MOCK MODE ---
-    # Set this to TRUE while you are coding/debugging.
-    # Set this to FALSE only when you are ready to demo.
-    USE_MOCK_DATA = True
+    # --- MOCK DATA (Updated for robustness) ---
+    USE_MOCK_DATA = True# <--- REMEMBER TO SET THIS TO FALSE TO USE REAL AI
 
     if USE_MOCK_DATA:
-        print("⚠️ MOCK MODE: Returning fake data to save API credits.")
+        print("⚠️ USING MOCK DATA (Switch to False for Real AI)")
         return {
             "status": "success",
             "data": {
-                "page_summary": "MOCK MODE - Wikipedia Test",
+                "page_summary": "Wikipedia Homepage",
                 "primary_actions": [
                     {
                         "label": "Search", 
-                        "visual_clue": "search", 
-                        "color": "blue"
+                        # We now provide MANY synonyms to ensure a hit
+                        "keywords": ["search", "search-input", "searchInput", "go", "find", "vector-search-box-input", "searchform"], 
+                        "icon_name": "search",
+                        "type": "input" # Explicitly tell JS this is a text box
                     },
                     {
                         "label": "Login", 
-                        "visual_clue": "log in", 
-                        "color": "gray"
-                    },
-                     {
-                        "label": "Read", 
-                        "visual_clue": "read", 
-                        "color": "gray"
+                        "keywords": ["log in", "sign in", "user-login", "pt-login", "account", "auth", "user"], 
+                        "icon_name": "login",
+                        "type": "clickable"
                     }
                 ]
             }
         }
+    # -------------------------------------------
+
     if not model:
-        return {
-            "status": "error", 
-            "message": "Server is running, but Gemini API Key is missing. Check terminal logs."
-        }
+        return {"status": "error", "message": "API Key missing."}
 
     try:
         img = decode_image(request.image_data)
         
+        # --- THE "CUTTING EDGE" PROMPT ---
         prompt = """
-You are an UI accessibility expert. Analyze this screenshot.
-        Identify the 2-3 PRIMARY actions (Happy Path).
-        
-        For the "visual_clue", choose the MOST LIKELY text attribute in the HTML.
-        - If it's a button with text, use that text.
-        - If it's a Search Icon, use "Search" or "Find".
-        - If it's a Login Icon, use "Login" or "Sign In".
-        
-        Return JSON format:
+        You are a Senior SDET (Software Development Engineer in Test). 
+        Your job is to reverse-engineer this UI screenshot into robust DOM selectors.
+
+        Task: Identify the 3 most critical actions for a non-technical user (The "Happy Path").
+
+        For each action, provide a "Robust Locator Strategy":
+        1. "label": The visible text (e.g. "Sign In").
+        2. "type": Is it an "input" (typing) or "clickable" (button/link)?
+        3. "icon_name": A Google Material Icon name (e.g. "search", "person", "shopping_cart").
+        4. "keywords": A technical array of at least 8 strings. Include:
+           - The visible text (e.g. "Sign In")
+           - Lowercase variations (e.g. "sign in")
+           - Likely HTML IDs (e.g. "login-btn", "nav-link-accountList")
+           - Likely ARIA labels (e.g. "Submit Search")
+           - Common synonyms (e.g. if text is "Go", keyword includes "search", "submit")
+
+        Return pure JSON:
         {
-            "page_summary": "Short description",
+            "page_summary": "Amazon Product Page",
             "primary_actions": [
                 { 
-                  "label": "Search", 
-                  "visual_clue": "search", 
-                  "color": "gray" 
+                  "label": "Add to Cart",
+                  "type": "clickable",
+                  "icon_name": "cart",
+                  "keywords": ["add to cart", "add-to-cart-button", "submit.add-to-cart", "a-button-input", "purchase", "buy"] 
                 }
             ]
         }
         """
 
-        print("🤖 Sending to Gemini...")
+        print("🤖 Sending to Gemini 3 (Engineer Mode)...")
         response = model.generate_content([prompt, img])
         response_json = json.loads(response.text)
-        print("✅ Analysis Success!")
-        
         return { "status": "success", "data": response_json }
 
     except Exception as e:
-        print(f"❌ Processing Error: {e}")
+        print(f"❌ Error: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.get("/")
